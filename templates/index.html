@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta http-equiv="X-UA-Compatible" content="ie=edge">
+	<title>Audit Trail Tester</title>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/jsencrypt/2.3.1/jsencrypt.min.js"></script>
+</head>
+<body>
+	<form>
+		<fieldset>
+			<legend>RSA Audit Trail</legend>
+
+			<label for="encryptText">Message</label>
+			<textarea id="encryptText" cols="30" rows="10"></textarea>
+			<br>
+
+			<label for="decryptText">Replay</label>
+			<textarea id="decryptText" cols="30" rows="10"></textarea>
+
+			<button id="submit">Submit</button>
+		</fieldset>
+	</form>
+	<script>
+		function chuck_data(data, k=32) {
+			return data.match(new RegExp('.{1,' + k + '}', 'g'));
+		}
+		function custom_rsa_encrypt(public_key, data) {
+			let result = "";
+			var encrypt = new JSEncrypt({default_key_size: 1024});
+			encrypt.setPublicKey(public_key);
+			let datas = chuck_data(data);
+			datas.forEach(function(item) {
+				result += `${encrypt.encrypt(item)}$`;
+			});
+			return result;
+		}
+		function custom_rsa_decrypt(private_key, data) {
+			let datas = data.split("$");
+			let result = "";
+			var decrypt = new JSEncrypt({default_key_size: 1024});
+			decrypt.setPrivateKey(private_key);
+			datas.forEach(function(item){
+				let plaintext = decrypt.decrypt(item);
+				if (plaintext) {
+					result += plaintext;
+				};
+			})
+			return result;
+		};
+		$(document).ready(function() {
+			$("#submit").click(function(evt){
+				evt.preventDefault();
+				let crypt = new JSEncrypt({default_key_size: 1024});
+				crypt.getKey();
+				let private_key = crypt.getPrivateKey();
+				let public_key = crypt.getPublicKey();
+				let encryptText = $("#encryptText").val();
+				$.ajax({
+					url: 'http://localhost:5000/audit',
+					crossDomain: true,
+					xhrFields: {
+						withCredentials: true
+					},
+					success: function(data) {
+						let server_public_key = data;
+						let req = {
+							private_key: private_key,
+							public_key: public_key,
+							data: custom_rsa_encrypt(public_key, encryptText)
+						};
+						let req_data = custom_rsa_encrypt(server_public_key, JSON.stringify(req));
+						$.ajax({
+							type: 'POST',
+							url: "http://localhost:5000/audit",
+							dataType: "text",
+							contentType: "text/plain",
+							data: req_data,
+							crossDomain: true,
+							xhrFields: {
+								withCredentials: true
+							},
+							success: function(data) {
+								$("#decryptText").val(custom_rsa_decrypt(private_key, data));
+							}
+						});
+					}
+				});
+			});
+		});
+	</script>
+</body>
+</html>
